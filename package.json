@@ -4,8 +4,11 @@
   "scripts": {
     "dev:web": "pnpm --filter @chainbook/web dev",
     "dev:listener": "pnpm --filter @chainbook/listener dev",
+    "build:listener": "pnpm --filter @chainbook/listener build",
     "build:web": "pnpm --filter @chainbook/web build",
-    "build:contracts": "pnpm --filter @chainbook/contracts compile"
+    "build:contracts": "pnpm --filter @chainbook/contracts compile",
+    "build": "pnpm run build:listener",
+    "start": "pnpm --filter @chainbook/listener start"
   },
   "workspaces": [
     "apps/*",
