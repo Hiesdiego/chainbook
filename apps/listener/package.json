@@ -1,0 +1,23 @@
+{
+  "name": "@chainbook/listener",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "reactivity:showcase-subscribe": "tsx src/scripts/createShowcaseSubscription.ts"
+  },
+  "dependencies": {
+    "@chainbook/shared": "workspace:*",
+    "@somnia-chain/reactivity": "latest",
+    "@supabase/supabase-js": "latest",
+    "viem": "latest",
+    "dotenv": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

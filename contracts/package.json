@@ -1,0 +1,23 @@
+{
+  "name": "@chainbook/contracts",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy-whale-watcher.ts --network somniaTestnet",
+    "verify": "hardhat verify --network somniaTestnet",
+    "test": "hardhat test"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ignition": "latest",
+    "@nomicfoundation/hardhat-toolbox-viem": "latest",
+    "@somnia-chain/reactivity": "latest",
+    "@somnia-chain/reactivity-contracts": "latest",
+    "dotenv": "^17.3.1",
+    "hardhat": "latest",
+    "ts-node": "latest",
+    "typescript": "latest",
+    "viem": "latest"
+  },
+  "type": "module"
+}

@@ -1,0 +1,44 @@
+{
+  "name": "@chainbook/web",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@chainbook/shared": "workspace:*",
+    "@privy-io/react-auth": "latest",
+    "@privy-io/wagmi": "latest",
+    "@supabase/supabase-js": "latest",
+    "@supabase/ssr": "latest",
+    "@tanstack/react-query": "latest",
+    "geist": "latest",
+    "framer-motion": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "viem": "latest",
+    "wagmi": "latest",
+    "react-sounds": "latest",
+    "howler": "latest",
+    "clsx": "latest",
+    "tailwind-merge": "latest",
+    "lucide-react": "latest",
+    "date-fns": "latest",
+    "recharts": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "autoprefixer": "latest",
+    "@tailwindcss/postcss": "latest",
+    "postcss": "latest",
+    "tailwindcss-animate": "latest",
+    "tailwindcss": "latest",
+    "typescript": "latest"
+  }
+}

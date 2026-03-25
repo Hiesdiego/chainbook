@@ -1,0 +1,15 @@
+{
+  "name": "chainbook",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter @chainbook/web dev",
+    "dev:listener": "pnpm --filter @chainbook/listener dev",
+    "build:web": "pnpm --filter @chainbook/web build",
+    "build:contracts": "pnpm --filter @chainbook/contracts compile"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "contracts"
+  ]
+}
