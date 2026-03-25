@@ -1,9 +1,13 @@
 {
   "version": 2,
+  "buildCommand": "pnpm install && pnpm --filter @chainbook/web build",
   "builds": [
     {
       "src": "apps/web/package.json",
-      "use": "@vercel/next"
+      "use": "@vercel/next",
+      "config": {
+        "zeroConfig": true
+      }
     }
   ]
 }
