@@ -261,9 +261,11 @@ export async function processEvent(raw: ReactivityData, options?: ProcessEventOp
   // Async side-effects - do not await to keep event processing fast
   void incrementTrending(decoded.contractAddress, resolvedWallet)
   void queueReputationUpdate(resolvedWallet, amountUsd)
-  
+
   // Wallet token tracking - DISABLED by default to save 30% RPC usage
-  if (env.ENABLE_WALLET_TOKEN_TRACKING && decoded.tokenIn) {
+  // Capture tokenIn into a const so TypeScript narrows it to `string` inside the closures
+  const tokenIn = decoded.tokenIn
+  if (env.ENABLE_WALLET_TOKEN_TRACKING && tokenIn) {
     const fromAddr = typeof decoded.metadata?.from === 'string'
       ? decoded.metadata.from
       : resolvedWallet
@@ -272,17 +274,17 @@ export async function processEvent(raw: ReactivityData, options?: ProcessEventOp
       : undefined
 
     if (fromAddr && !isZeroAddress(fromAddr)) {
-      void withRpcLimit(() => updateWalletTokenHolding(fromAddr, decoded.tokenIn, tokenMeta?.decimals ?? null))
+      void withRpcLimit(() => updateWalletTokenHolding(fromAddr, tokenIn, tokenMeta?.decimals ?? null))
     }
     if (toAddr && !isZeroAddress(toAddr)) {
-      void withRpcLimit(() => updateWalletTokenHolding(toAddr, decoded.tokenIn, tokenMeta?.decimals ?? null))
+      void withRpcLimit(() => updateWalletTokenHolding(toAddr, tokenIn, tokenMeta?.decimals ?? null))
     }
   }
-  
-  if (postType === 'MINT' && decoded.tokenIn) {
+
+  if (postType === 'MINT' && tokenIn) {
     const mintedOwner = (decoded.metadata?.to as string | undefined) ?? resolvedWallet
     if (mintedOwner && !isZeroAddress(mintedOwner)) {
-      void upsertMintedToken(mintedOwner, decoded.tokenIn, 'MINTED', raw.transactionHash)
+      void upsertMintedToken(mintedOwner, tokenIn, 'MINTED', raw.transactionHash)
     }
   }
 
@@ -312,6 +314,10 @@ export async function processNativeTransfer(tx: NativeTransfer): Promise<void> {
   if (!tx.to) return
   if (!tx.value || tx.value === 0n) return
 
+  // Capture tx.to into a const so TypeScript keeps the narrowed non-nullable type
+  // in all closures below (the `if (!tx.to) return` above already guards it).
+  const txTo: Hex = tx.to
+
   const amountUsd = await toUsd(tx.value, 'somnia-network', 18)
   const isWhaleAlert = amountUsd >= env.WHALE_THRESHOLD_USD
   const significanceScore = calculateSignificanceScore(amountUsd, 'TRANSFER', isWhaleAlert)
@@ -336,7 +342,7 @@ export async function processNativeTransfer(tx: NativeTransfer): Promise<void> {
     tx_hash: tx.hash,
     block_number: Number(tx.blockNumber ?? 0n),
     metadata: {
-      to: tx.to.toLowerCase(),
+      to: txTo.toLowerCase(),
       is_native: true,
       token_symbol: env.NATIVE_TOKEN_SYMBOL,
       token_name: env.NATIVE_TOKEN_NAME,
@@ -358,13 +364,13 @@ export async function processNativeTransfer(tx: NativeTransfer): Promise<void> {
 
   console.log(`[NativeTransfer] ${isWhaleAlert ? 'WHALE ' : ''}TRANSFER | $${amountUsd.toFixed(2)} | ${tx.from.slice(0, 8)}...`)
 
-  void incrementTrending(tx.to, tx.from)
+  void incrementTrending(txTo, tx.from)
   void queueReputationUpdate(tx.from, amountUsd)
-  
+
   // Wallet native balance tracking - DISABLED by default to save RPC usage
   if (env.ENABLE_WALLET_TOKEN_TRACKING) {
     void withRpcLimit(() => updateWalletNativeBalanceUsd(tx.from))
-    if (tx.to) void withRpcLimit(() => updateWalletNativeBalanceUsd(tx.to))
+    void withRpcLimit(() => updateWalletNativeBalanceUsd(txTo))
   }
 
   // Notifications - DISABLED by default to save DB usage
@@ -372,7 +378,7 @@ export async function processNativeTransfer(tx: NativeTransfer): Promise<void> {
     void withDbLimit(() => dispatchNotifications({
       postId: insertedPost.id,
       walletAddress: tx.from,
-      contractAddress: tx.to,
+      contractAddress: txTo,
       amountUsd,
       isWhaleAlert,
       postType: 'TRANSFER',

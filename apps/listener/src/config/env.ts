@@ -47,7 +47,6 @@ export const env = {
   RPC_TIMEOUT_MS:                     Number(process.env.RPC_TIMEOUT_MS ?? '15000'),
   RPC_RETRY_COUNT:                    Number(process.env.RPC_RETRY_COUNT ?? '3'),
   RPC_RETRY_DELAY_MS:                 Number(process.env.RPC_RETRY_DELAY_MS ?? '1500'),
-  TOKEN_METADATA_TTL_MS:              Number(process.env.TOKEN_METADATA_TTL_MS ?? '3600000'),
   USE_TX_FROM_AS_WALLET:              bool_env('USE_TX_FROM_AS_WALLET', true),
   NATIVE_TOKEN_SYMBOL:                process.env.NATIVE_TOKEN_SYMBOL ?? 'STT',
   NATIVE_TOKEN_NAME:                  process.env.NATIVE_TOKEN_NAME ?? 'Somnia Test Token',
