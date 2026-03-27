@@ -79,5 +79,6 @@ export const env = {
   // Transfers below this threshold are silently dropped. Does NOT affect MINT,
   // SWAP, NFT_TRADE, LIQUIDITY_*, DAO_VOTE, or CONTRACT_DEPLOY events.
   // STT-priced transfers use USD significance instead and bypass this check.
-  ERC20_TRANSFER_MIN_AMOUNT:             Number(process.env.ERC20_TRANSFER_MIN_AMOUNT ?? '100'),
+   ERC20_TRANSFER_MIN_AMOUNT:             Number(process.env.ERC20_TRANSFER_MIN_AMOUNT ?? '1000'),
+   NATIVE_STT_MIN_AMOUNT:                 Number(process.env.NATIVE_STT_MIN_AMOUNT ?? '10'),
 } as const
