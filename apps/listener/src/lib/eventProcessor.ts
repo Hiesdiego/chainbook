@@ -47,9 +47,7 @@ async function withDbLimit<T>(fn: () => Promise<T>): Promise<T> {
 
 // ─── Post source cache ────────────────────────────────────────────────────────
 // Eliminates the pre-upsert DB SELECT (getExistingPostSource) for events that
-// have already been seen within the TTL window. On a typical block the same
-// postIdHash is processed by both the reactivity path and the log fallback path
-// within seconds — the second call hits the cache and avoids the DB entirely.
+// have already been seen within the TTL window.
 const POST_SOURCE_CACHE_TTL_MS = env.POST_SOURCE_CACHE_TTL_MS ?? 120_000
 const postSourceCache = new Map<string, { source: string; cachedAt: number }>()
 let lastPostSourceCacheCleanup = 0
@@ -77,8 +75,6 @@ function setCachedPostSource(postIdHash: string, source: string): void {
 }
 
 // ─── txFromCache (capped) ─────────────────────────────────────────────────────
-// Caches tx.from keyed by txHash. One getTransaction RPC call per unique tx.
-// Capped at 2000 entries to bound memory on Railway's constrained instances.
 const TX_FROM_CACHE_MAX = 2_000
 const txFromCache = new Map<string, string>()
 
@@ -104,6 +100,10 @@ const ERC20_BALANCE_OF_ABI = [
 const DEFAULT_SHOWCASE_TOPIC = keccak256(
   toHex('ReactivityProof(address,bytes32,bytes32,uint256)'),
 )
+
+// Pre-compute native STT minimum in wei once at startup to avoid repeated
+// bigint arithmetic per event. 10n ** 18n = 1 STT in wei.
+const NATIVE_STT_MIN_WEI = BigInt(env.NATIVE_STT_MIN_AMOUNT) * (10n ** 18n)
 
 export function queueReputationUpdate(wallet: string, volumeUsd: number): void {
   const existing = reputationQueue.get(wallet)
@@ -179,9 +179,9 @@ export async function processEvent(
     postType = 'NFT_TRADE'
   }
 
-  // ── USD pricing ──────────────────────────────────────────────────────────────
-  // Only price when the token symbol matches the native token (STT).
-  // All other ERC20 tokens have no reliable oracle and stay at $0.
+  // ── USD pricing ───────────────────────────────────────────────────────────
+  // Only price when token symbol matches native token (STT via oracle).
+  // All other ERC20 tokens have no reliable price source and stay at $0.
   let amountUsd = 0
   const tokenSymbolUpper = tokenMeta?.symbol?.toUpperCase()
   if (
@@ -193,16 +193,12 @@ export async function processEvent(
     amountUsd = await toUsd(decoded.amountRaw, 'somnia-network', decimals)
   }
 
-  // ── Unpriced ERC20 transfer minimum amount filter ────────────────────────────
-  // Since we have no USD price for most ERC20 tokens, we use a raw token
-  // minimum to filter out dust and spam transfers.
-  //
-  // Rule: only applies to TRANSFER posts with amountUsd = 0 (unpriced tokens).
-  //       MINT, SWAP, NFT_TRADE, LIQUIDITY_*, DAO_VOTE, CONTRACT_DEPLOY are
-  //       never filtered here — they all pass through unconditionally.
-  //
-  // STT-priced transfers bypass this because amountUsd > 0 for them and they
-  // use the USD significance path instead.
+  // ── Unpriced ERC20 TRANSFER minimum amount filter ─────────────────────────
+  // Drops dust/spam transfers before any DB or RPC work.
+  // Scope: TRANSFER posts only, with no USD price, with a known raw amount.
+  // All other post types (MINT, SWAP, NFT_TRADE, LIQUIDITY_*, DAO_VOTE,
+  // CONTRACT_DEPLOY) are never affected.
+  // STT-priced transfers bypass this because amountUsd > 0 for them.
   if (postType === 'TRANSFER' && amountUsd === 0 && decoded.amountRaw != null) {
     const decimals = BigInt(tokenMeta?.decimals ?? 18)
     const minRaw = BigInt(env.ERC20_TRANSFER_MIN_AMOUNT) * (10n ** decimals)
@@ -212,11 +208,11 @@ export async function processEvent(
   const isWhaleAlert = decoded.isWhaleEvent === true || amountUsd >= env.WHALE_THRESHOLD_USD
   const significanceScore = calculateSignificanceScore(amountUsd, postType, isWhaleAlert)
 
-  // ── Significance ─────────────────────────────────────────────────────────────
-  // An unpriced ERC20 transfer that reached this point has already passed the
-  // minimum amount filter above, so it qualifies as significant regardless of
-  // its USD value (which is $0). Without this clause every unpriced ERC20
-  // transfer would be is_significant=false and invisible in the frontend.
+  // ── Significance ──────────────────────────────────────────────────────────
+  // An unpriced ERC20 transfer that passed the minimum filter above is always
+  // significant — it represents a real transfer of meaningful token volume.
+  // Without this flag every unpriced transfer would be is_significant=false
+  // regardless of size because score=4 is always below SIGNIFICANT_MIN_SCORE=20.
   const isUnpricedTransferAboveMin =
     postType === 'TRANSFER' &&
     amountUsd === 0 &&
@@ -282,11 +278,9 @@ export async function processEvent(
     }
   }
 
-  // ── Source priority check ──────────────────────────────────────────────────
-  // 1. Spotlight is always priority 4 (max) — skip the check entirely to save
-  //    one DB read per spotlight event.
-  // 2. For all other sources, check the in-memory cache first (free). Only fall
-  //    back to the DB on a true cache miss (first time we see this postIdHash).
+  // ── Source priority check ─────────────────────────────────────────────────
+  // Spotlight is always priority 4 (max) — skip the check entirely.
+  // For all other sources, cache-first then DB fallback on miss.
   const incomingSource = options?.source ?? 'unknown'
   const incomingPriority = sourcePriority(incomingSource)
 
@@ -304,7 +298,6 @@ export async function processEvent(
     return
   }
 
-  // Populate cache so subsequent duplicate calls skip the DB read
   setCachedPostSource(postIdHash, incomingSource)
 
   if (options?.source === 'reactivity_spotlight' && insertedPost?.id) {
@@ -382,6 +375,12 @@ interface NativeTransfer {
 export async function processNativeTransfer(tx: NativeTransfer): Promise<void> {
   if (!tx.to) return
   if (!tx.value || tx.value === 0n) return
+
+  // ── Native STT minimum filter ─────────────────────────────────────────────
+  // Drop micro/dust STT transfers before any pricing, DB, or RPC work.
+  // NATIVE_STT_MIN_WEI is pre-computed at startup (env.NATIVE_STT_MIN_AMOUNT
+  // whole STT converted to wei). Default = 10 STT.
+  if (tx.value < NATIVE_STT_MIN_WEI) return
 
   const amountUsd = await toUsd(tx.value, 'somnia-network', 18)
   const isWhaleAlert = amountUsd >= env.WHALE_THRESHOLD_USD
@@ -632,16 +631,12 @@ async function buildTransferBalanceMetadata(
     if (input.blockNumber > 0n) {
       if (fromBefore == null) {
         fromBefore = await readBalanceAtBlock(
-          input.tokenAddress,
-          input.fromAddress,
-          input.blockNumber - 1n,
+          input.tokenAddress, input.fromAddress, input.blockNumber - 1n,
         )
       }
       if (toBefore == null) {
         toBefore = await readBalanceAtBlock(
-          input.tokenAddress,
-          input.toAddress,
-          input.blockNumber - 1n,
+          input.tokenAddress, input.toAddress, input.blockNumber - 1n,
         )
       }
     }
