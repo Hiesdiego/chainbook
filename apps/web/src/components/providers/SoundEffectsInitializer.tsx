@@ -1,12 +1,10 @@
 'use client'
 
-import { useSoundEffects } from '@/lib/hooks/useSoundEffects'
-
 /**
- * Wrapper component to enable global sound effects
- * Place this near the root for universal click sounds
+ * Reserved shell for future global sound orchestration.
+ * Global click sounds have been removed — sounds are now triggered
+ * explicitly per-component via useSoundEffects().
  */
 export function SoundEffectsInitializer() {
-  useSoundEffects()
   return null
 }

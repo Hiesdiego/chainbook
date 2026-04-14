@@ -29,9 +29,14 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
+        suppressHydrationWarning  
         className={`${GeistSans.variable} ${GeistMono.variable} font-sans antialiased bg-background text-foreground min-h-screen`}
       >
-        <Providers>{children}</Providers>
+      
+        <Providers>
+          {children}
+        </Providers>
+      <script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "987e3834be3945e39393aa3eef491cac"}'></script>
       </body>
     </html>
   )

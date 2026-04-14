@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Image from 'next/image'
 import {
@@ -29,6 +29,8 @@ interface SparkPoint {
   count: number
 }
 
+type PulseRange = '1H' | '3H' | '1D'
+
 const STAT_TYPES: PostType[] = [
   'SWAP',
   'TRANSFER',
@@ -40,9 +42,35 @@ const STAT_TYPES: PostType[] = [
   'NFT_TRADE',
 ]
 
+const RANGE_OPTIONS: { value: PulseRange; label: string; durationMs: number }[] = [
+  { value: '1H', label: '1H', durationMs: 60 * 60_000 },
+  { value: '3H', label: '3H', durationMs: 3 * 60 * 60_000 },
+  { value: '1D', label: '1D', durationMs: 24 * 60 * 60_000 },
+]
+
+function createEmptyCounts() {
+  return {
+    SWAP: 0,
+    TRANSFER: 0,
+    MINT: 0,
+    DAO_VOTE: 0,
+    LIQUIDITY_ADD: 0,
+    LIQUIDITY_REMOVE: 0,
+    CONTRACT_DEPLOY: 0,
+    NFT_TRADE: 0,
+    WHALE_ALERT: 0,
+  } as Record<string, number>
+}
+
+function getRangeStart(range: PulseRange) {
+  const option = RANGE_OPTIONS.find((item) => item.value === range) ?? RANGE_OPTIONS[0]
+  return new Date(Date.now() - option.durationMs).toISOString()
+}
+
 export function PulseClient({ seedCounts, seedEvents = [], seedSpark }: PulseClientProps) {
   const [counts, setCounts] = useState<Record<string, number>>(seedCounts)
   const [whaleCount, setWhaleCount] = useState(seedCounts['WHALE_ALERT'] ?? 0)
+  const [selectedRange, setSelectedRange] = useState<PulseRange>('1H')
   const [sparkData, setSparkData] = useState<SparkPoint[]>(() => {
     if (seedSpark && seedSpark.length > 0) return seedSpark
     const now = Date.now()
@@ -57,21 +85,21 @@ export function PulseClient({ seedCounts, seedEvents = [], seedSpark }: PulseCli
   const [recentEvents, setRecentEvents] = useState<
     { id: string; type: PostType; wallet: string; time: string }[]
   >(seedEvents as { id: string; type: PostType; wallet: string; time: string }[])
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
   const isRefreshingRef = useRef(false)
 
-  async function refreshPulseFromDb() {
+  async function refreshPulseFromDb(range: PulseRange) {
     if (isRefreshingRef.current) return
     isRefreshingRef.current = true
     try {
-      const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString()
+      const rangeStart = getRangeStart(range)
       const tenMinAgo = new Date(Date.now() - 10 * 60_000).toISOString()
 
       const [{ data: rows }, { data: minuteRows }, { data: recentRows }] = await Promise.all([
         supabase
           .from('posts')
           .select('type, is_whale_alert')
-          .gte('created_at', oneHourAgo),
+          .gte('created_at', rangeStart),
         supabase
           .from('posts')
           .select('created_at')
@@ -79,21 +107,12 @@ export function PulseClient({ seedCounts, seedEvents = [], seedSpark }: PulseCli
         supabase
           .from('posts')
           .select('id, type, wallet_address, created_at')
-          .gte('created_at', oneHourAgo)
+          .gte('created_at', rangeStart)
           .order('created_at', { ascending: false })
           .limit(8),
       ])
 
-      const nextCounts: Record<string, number> = {
-        SWAP: 0,
-        TRANSFER: 0,
-        MINT: 0,
-        DAO_VOTE: 0,
-        LIQUIDITY_ADD: 0,
-        LIQUIDITY_REMOVE: 0,
-        CONTRACT_DEPLOY: 0,
-        NFT_TRADE: 0,
-      }
+      const nextCounts = createEmptyCounts()
       let nextWhale = 0
 
       for (const row of rows ?? []) {
@@ -140,7 +159,7 @@ export function PulseClient({ seedCounts, seedEvents = [], seedSpark }: PulseCli
   }
 
   useEffect(() => {
-    void refreshPulseFromDb()
+    void refreshPulseFromDb(selectedRange)
     const channel = supabase
       .channel('pulse-stream')
       .on(
@@ -195,18 +214,28 @@ export function PulseClient({ seedCounts, seedEvents = [], seedSpark }: PulseCli
       )
       .subscribe()
     const refreshInterval = setInterval(() => {
-      void refreshPulseFromDb()
+      void refreshPulseFromDb(selectedRange)
     }, 15_000)
 
     return () => {
       supabase.removeChannel(channel)
       clearInterval(refreshInterval)
     }
-  }, [])
+  }, [selectedRange, supabase])
 
   const totalEvents = Object.entries(counts)
     .filter(([k]) => k !== 'WHALE_ALERT')
     .reduce((sum, [, v]) => sum + v, 0)
+
+  const distributionData = useMemo(
+    () =>
+      STAT_TYPES.map((type) => ({
+        type,
+        label: POST_TYPE_META[type].label,
+        count: counts[type] ?? 0,
+      })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+    [counts],
+  )
 
   return (
     <div className="flex flex-col gap-6">
@@ -221,6 +250,27 @@ export function PulseClient({ seedCounts, seedEvents = [], seedSpark }: PulseCli
         />
         <h1 className="text-xl font-bold">Activity Pulse</h1>
         <span className="ml-auto inline-flex h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+      </div>
+
+      <div className="flex items-center gap-2">
+        {RANGE_OPTIONS.map((option) => {
+          const isActive = option.value === selectedRange
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setSelectedRange(option.value)}
+              className={[
+                'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                isActive
+                  ? 'border-blue-500 bg-blue-500/10 text-blue-300'
+                  : 'border-border bg-card text-muted-foreground hover:text-foreground',
+              ].join(' ')}
+            >
+              {option.label}
+            </button>
+          )
+        })}
       </div>
 
       {/* Sparkline */}
@@ -262,15 +312,13 @@ export function PulseClient({ seedCounts, seedEvents = [], seedSpark }: PulseCli
       {/* Distribution chart */}
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="flex items-center justify-between mb-4">
-          <p className="text-sm text-muted-foreground">Type distribution (last 1h)</p>
+          <p className="text-sm text-muted-foreground">
+            Type distribution ({selectedRange === '1D' ? 'last 1 day' : `last ${selectedRange.toLowerCase()}`})
+          </p>
         </div>
         <ResponsiveContainer width="100%" height={180}>
           <BarChart
-            data={STAT_TYPES.map((type) => ({
-              type,
-              label: POST_TYPE_META[type].label,
-              count: counts[type] ?? 0,
-            }))}
+            data={distributionData}
             margin={{ top: 0, right: 8, left: 0, bottom: 0 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(216 34% 17%)" />
@@ -306,7 +354,7 @@ export function PulseClient({ seedCounts, seedEvents = [], seedSpark }: PulseCli
         </div>
 
         {/* Per-type cards */}
-        {STAT_TYPES.map((type) => {
+        {distributionData.map(({ type }) => {
           const meta = POST_TYPE_META[type]
           return (
             <div

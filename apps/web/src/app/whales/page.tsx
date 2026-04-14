@@ -1,3 +1,5 @@
+//apps/web/src/app/whales/page.tsx
+
 import { AppShell } from '@/components/layout/AppShell'
 import { WhaleSearchClient } from '@/components/whales/WhaleSearchClient'
 

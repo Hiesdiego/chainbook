@@ -175,10 +175,9 @@ export function WalletProfileClient({
   }
 
   async function handleTrack() {
-    // Require connection before proceeding
     if (!requireConnection() || isSavingTrack || isOwnProfile || !connectedAddress) return
     if (isWaitingForConnection) return
-    
+
     setIsSavingTrack(true)
     const tracker = connectedAddress.toLowerCase()
     const target = address.toLowerCase()
@@ -207,7 +206,6 @@ export function WalletProfileClient({
   }
 
   async function handleAlert() {
-    // Require connection before proceeding
     if (!requireConnection() || isSavingAlert || isOwnProfile || !connectedAddress) return
     setIsSavingAlert(true)
     const tracker = connectedAddress.toLowerCase()
@@ -240,8 +238,10 @@ export function WalletProfileClient({
   return (
     <div className="flex flex-col gap-6">
       {/* Profile header */}
-      <div className="rounded-xl border border-border bg-card p-6 flex flex-col gap-4">
-        <div className="flex items-start justify-between">
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-6 flex flex-col gap-4">
+
+        {/* ── Avatar row + action buttons ─────────────────────────────────── */}
+        <div className="flex items-start justify-between gap-2">
           <WalletAvatar
             address={address}
             tier={tier}
@@ -252,55 +252,64 @@ export function WalletProfileClient({
             linkable={false}
           />
 
-          <div className="flex items-center gap-2">
+          {/* Action buttons — icon-only on mobile, icon + label on sm+ */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end">
+            {/* Explorer link */}
             <a
               href={walletUrl(address)}
               target="_blank"
               rel="noopener noreferrer"
+              title="View on explorer"
               className="p-2 rounded-lg border border-border hover:bg-accent transition-colors"
             >
               <ExternalLink className="w-4 h-4 text-muted-foreground" />
             </a>
 
+            {/* Track button */}
             {!isOwnProfile && (isConnected || isWaitingForConnection) && (
               <button
                 onClick={handleTrack}
                 disabled={isSavingTrack || isWaitingForConnection}
+                title={isTracked ? 'Untrack' : 'Track'}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50',
+                  'flex items-center gap-1.5 px-2 sm:px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50',
                   isTracked
                     ? 'border border-border text-foreground hover:bg-accent'
                     : 'border border-border text-muted-foreground hover:text-foreground hover:bg-accent',
                 )}
               >
-                <Star className="w-4 h-4" />
-                {isTracked ? 'Tracking' : 'Track'}
+                <Star className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">{isTracked ? 'Tracking' : 'Track'}</span>
               </button>
             )}
 
+            {/* Alert button */}
             {!isOwnProfile && (isConnected || isWaitingForConnection) && (
               <button
                 onClick={handleAlert}
                 disabled={isSavingAlert || isWaitingForConnection}
+                title={isAlerted ? 'Remove alert' : 'Set alert'}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50',
+                  'flex items-center gap-1.5 px-2 sm:px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50',
                   isAlerted
                     ? 'border border-blue-500 text-blue-500 hover:bg-blue-500/10'
                     : 'border border-border text-muted-foreground hover:text-foreground hover:bg-accent',
                 )}
               >
-                <Bell className="w-4 h-4" />
-                {isAlerted ? 'Alerting' : 'Alert'}
+                <Bell className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">{isAlerted ? 'Alerting' : 'Alert'}</span>
               </button>
             )}
 
+            {/* Follow / Unfollow button */}
             {!isOwnProfile && (
               isConnected || isWaitingForConnection ? (
                 <button
                   onClick={handleFollow}
                   disabled={isFollowPending || isWaitingForConnection}
+                  title={isFollowing ? 'Unfollow' : 'Follow'}
                   className={cn(
-                    'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50',
+                    'flex items-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50',
                     isFollowing
                       ? 'border border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30'
                       : 'bg-blue-500 hover:bg-blue-600 text-white',
@@ -308,23 +317,23 @@ export function WalletProfileClient({
                 >
                   {isFollowing ? (
                     <>
-                      <UserMinus className="w-4 h-4" />
-                      Unfollow
+                      <UserMinus className="w-4 h-4 shrink-0" />
+                      <span className="hidden sm:inline">Unfollow</span>
                     </>
                   ) : (
                     <>
-                      <UserPlus className="w-4 h-4" />
-                      Follow
+                      <UserPlus className="w-4 h-4 shrink-0" />
+                      <span className="hidden sm:inline">Follow</span>
                     </>
                   )}
                 </button>
               ) : (
                 <button
                   onClick={handleConnect}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-blue-500 hover:bg-blue-600 text-white"
+                  className="flex items-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-blue-500 hover:bg-blue-600 text-white"
                 >
-                  <UserPlus className="w-4 h-4" />
-                  Connect to Follow
+                  <UserPlus className="w-4 h-4 shrink-0" />
+                  <span className="hidden sm:inline">Connect to Follow</span>
                 </button>
               )
             )}

@@ -68,32 +68,29 @@ export const env = {
   MAX_CONCURRENT_DB_OPERATIONS:          Number(process.env.MAX_CONCURRENT_DB_OPERATIONS ?? '30'),
   PRICE_FEED_CACHE_TTL_MS:               Number(process.env.PRICE_FEED_CACHE_TTL_MS ?? '300000'),
 
-  // ── Balance tracking (split into two flags) ────────────────────────────────
+  // ── Balance tracking ───────────────────────────────────────────────────────
   //
   // ENABLE_NATIVE_BALANCE_TRACKING (default: true)
-  //   Re-enabled. One `eth_getBalance` RPC call per unique wallet per native
-  //   STT transfer. This feeds `wallet_balance_usd` which drives the
-  //   whale / shark / crab / shrimp labelling system. Low cost, high value.
+  //   One `eth_getBalance` RPC call per unique wallet per native STT transfer.
+  //   Feeds wallet_balance_usd which drives whale/shark/crab/shrimp labelling.
   ENABLE_NATIVE_BALANCE_TRACKING:        bool_env('ENABLE_NATIVE_BALANCE_TRACKING', true),
 
-  // ENABLE_TOKEN_HOLDING_TRACKING (default: false)
-  //   Kept disabled. Calls `balanceOf` for every ERC20 token involved in every
-  //   transfer event — very expensive at scale. Only enable if you need per-token
-  //   portfolio data in the frontend.
-  ENABLE_TOKEN_HOLDING_TRACKING:         bool_env('ENABLE_TOKEN_HOLDING_TRACKING', false),
+  // ENABLE_TOKEN_HOLDING_TRACKING (default: true)
+  //   Re-enabled. One `balanceOf` RPC call per ERC20 token per unique wallet
+  //   per qualifying transfer event. Required for the Tokens tab in wallet
+  //   profiles and for accurate multi-token portfolio data.
+  //
+  //   Cost context: on Render free tier with ~73 GB headroom remaining,
+  //   this is affordable. The concurrency limiter (MAX_CONCURRENT_RPC_CALLS)
+  //   prevents RPC floods — calls are batched and rate-controlled.
+  //   Re-disable if bandwidth approaches 80 GB/month.
+  ENABLE_TOKEN_HOLDING_TRACKING:         bool_env('ENABLE_TOKEN_HOLDING_TRACKING', true),
 
   ENABLE_NOTIFICATIONS:                  bool_env('ENABLE_NOTIFICATIONS', false),
   NOTIFICATION_MIN_USD_THRESHOLD:        Number(process.env.NOTIFICATION_MIN_USD_THRESHOLD ?? '1000'),
   POST_SOURCE_CACHE_TTL_MS:              Number(process.env.POST_SOURCE_CACHE_TTL_MS ?? '120000'),
 
   // ── Transfer noise filters ─────────────────────────────────────────────────
-  // Minimum whole-token amount for unpriced ERC20 transfers to be logged.
-  // Applied flat across all tokens regardless of decimals or price.
-  // Does NOT affect MINT, SWAP, NFT_TRADE, LIQUIDITY_*, DAO_VOTE, CONTRACT_DEPLOY.
-  // STT-priced transfers use USD significance instead and bypass this check.
   ERC20_TRANSFER_MIN_AMOUNT:             Number(process.env.ERC20_TRANSFER_MIN_AMOUNT ?? '1000'),
-
-  // Minimum native STT amount (whole tokens, not wei) for native transfers to
-  // be logged as posts. Filters dust and micro-test transactions.
   NATIVE_STT_MIN_AMOUNT:                 Number(process.env.NATIVE_STT_MIN_AMOUNT ?? '10'),
 } as const

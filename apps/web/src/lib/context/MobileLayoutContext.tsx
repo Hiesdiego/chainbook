@@ -10,6 +10,14 @@ interface MobileLayoutContextType {
   isMobile: boolean
 }
 
+const defaultMobileLayoutContext: MobileLayoutContextType = {
+  isSidebarOpen: false,
+  toggleSidebar: () => {},
+  closeSidebar: () => {},
+  openSidebar: () => {},
+  isMobile: false,
+}
+
 const MobileLayoutContext = createContext<MobileLayoutContextType | undefined>(
   undefined
 )
@@ -65,8 +73,5 @@ export function MobileLayoutProvider({ children }: { children: React.ReactNode }
 
 export function useMobileLayout() {
   const context = useContext(MobileLayoutContext)
-  if (!context) {
-    throw new Error('useMobileLayout must be used within MobileLayoutProvider')
-  }
-  return context
+  return context ?? defaultMobileLayoutContext
 }

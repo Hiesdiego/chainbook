@@ -30,6 +30,7 @@ export type PostType =
   | 'LIQUIDITY_REMOVE'
   | 'CONTRACT_DEPLOY'
   | 'NFT_TRADE'
+  | 'AGENT_INSIGHT'
 
 export interface Post {
   id: string
@@ -49,8 +50,10 @@ export interface Post {
   like_count: number
   comment_count: number
   is_whale_alert: boolean
+  is_agent_post?: boolean
   significance_score?: number | null
   is_significant?: boolean | null
+  source_post_id?: string | null
   created_at: string
   wallet?: Wallet
 }

@@ -81,3 +81,9 @@ temp/
 # Private Conversations
 # =========================
 FIX-BY-LINXX.md
+
+# =========================
+# Scripts
+# =========================
+scripts/
+scripts*

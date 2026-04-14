@@ -326,9 +326,9 @@ Chainbook is a proprietary project and currently closed for external contributio
 ## 🙋 Support & Feedback
 
 Have questions or feedback? 
-- 📧 Email: hello@primafilabs.com
-- 🐦 Twitter: [@PrimaFi_Labs](https://twitter.com/PrimaFi_Labs)
-- 💬 Discord: [Join our community](https://discord.gg/primafilabs)
+- 📧 Email: contact@primafi.xyz
+- 🐦 Twitter: [@PrimaFi_Labs](https://twitter.com/primafilabs)
+
 
 ---
 

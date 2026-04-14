@@ -1,5 +1,3 @@
-//apps/web/src/components/feed/PostCard.tsx
-
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -16,7 +14,7 @@ import {
   UserMinus,
   UserPlus,
 } from 'lucide-react'
-import { useWriteContract } from 'wagmi'
+import { useAccount, useWriteContract } from 'wagmi'
 import { useConnectedAccount } from '@/lib/hooks/useConnectedAccount'
 import {
   cn,
@@ -43,10 +41,6 @@ interface PostCardProps {
   showFollowButton?: boolean
 }
 
-function likeKey(walletAddress: string, postId: string) {
-  return `chainbook_liked_${walletAddress.toLowerCase()}_${postId}`
-}
-
 export function PostCard({
   post,
   onLikeSound,
@@ -56,6 +50,7 @@ export function PostCard({
   showFollowButton = true,
 }: PostCardProps) {
   const { isConnected, address, requireConnection, isWaitingForConnection } = useConnectedAccount()
+  const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount()
   const { writeContractAsync } = useWriteContract()
 
   const [localLikeCount, setLocalLikeCount] = useState(post.like_count ?? 0)
@@ -70,12 +65,9 @@ export function PostCard({
   const isOwnPost = !!viewerAddress && viewerAddress === postWalletAddress
   const isFollowingPost = followingAddresses?.includes(postWalletAddress) ?? false
   const commentCount = post.comment_count ?? 0
-  const typeMeta = POST_TYPE_META[post.type]
-
-  useEffect(() => {
-    if (!address) return
-    setHasLiked(localStorage.getItem(likeKey(address, post.id)) === '1')
-  }, [address, post.id])
+  const typeMeta = POST_TYPE_META[post.type] ?? { icon: 'EVT', label: post.type, color: 'text-cyan-400' }
+  const hasValidPostHash = /^0x[a-fA-F0-9]{64}$/.test(post.post_id_hash)
+  const postIdHash = hasValidPostHash ? (post.post_id_hash as `0x${string}`) : null
 
   useEffect(() => {
     setLocalLikeCount(post.like_count ?? 0)
@@ -95,26 +87,30 @@ export function PostCard({
   async function handleLike() {
     setLikeError(null)
     if (!requireConnection()) return
-    if (hasLiked || isWaitingForConnection) return
+    if (hasLiked || isWaitingForConnection || !address) return
 
     setHasLiked(true)
     setLocalLikeCount((c) => c + 1)
     onLikeSound?.()
-    if (address) localStorage.setItem(likeKey(address, post.id), '1')
 
     try {
-      const updatedCount = await likePost({ postId: post.id, walletAddress: address! })
+      const updatedCount = await likePost({ postId: post.id, walletAddress: address })
       setLocalLikeCount(updatedCount)
-      writeContractAsync({
-        address: CONTRACT_ADDRESSES.postRegistry,
-        abi: POST_REGISTRY_ABI,
-        functionName: 'likePost',
-        args: [post.post_id_hash as `0x${string}`],
-      }).catch((err) => console.warn('On-chain like skipped:', err))
+
+      // Best-effort on-chain mirror: do not fail UI if chain call fails.
+      if (postIdHash && isWagmiConnected && wagmiAddress) {
+        writeContractAsync({
+          address: CONTRACT_ADDRESSES.postRegistry,
+          abi: POST_REGISTRY_ABI,
+          functionName: 'likePost',
+          args: [postIdHash],
+        }).catch((err) => {
+          console.warn('On-chain like mirror skipped:', err)
+        })
+      }
     } catch (error) {
       setLocalLikeCount((c) => Math.max(0, c - 1))
       setHasLiked(false)
-      if (address) localStorage.removeItem(likeKey(address, post.id))
       setLikeError(error instanceof Error ? error.message : 'Failed to like post')
     }
   }
@@ -187,21 +183,23 @@ export function PostCard({
       exit={{ opacity: 0, y: -4 }}
       transition={{ duration: 0.2 }}
       className={cn(
-        'glass-panel rounded-2xl border p-4 flex flex-col gap-3 transition-all hover:shadow-2xl cursor-pointer',
+        'glass-panel rounded-2xl border p-3 sm:p-4 flex flex-col gap-2.5 sm:gap-3 transition-all hover:shadow-2xl cursor-pointer',
         post.is_whale_alert && 'border-cyan-400/45 bg-gradient-to-br from-card/95 via-card/95 to-cyan-500/10 shadow-cyan-500/20',
         !post.is_whale_alert && 'border-border/70 hover:border-cyan-400/25',
       )}
     >
       {post.is_whale_alert && (
         <div className="flex items-center gap-2 bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-purple-500/20 text-cyan-200 text-xs font-bold px-3 py-2 rounded-xl border border-cyan-400/40">
-          <Sparkles className="w-3.5 h-3.5" />
+          <Sparkles className="w-3.5 h-3.5 shrink-0" />
           <span>WHALE ALERT</span>
           <span className="ml-auto inline-flex h-2 w-2 rounded-full bg-cyan-300 animate-pulse" />
         </div>
       )}
 
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
+      {/* ── Top row: avatar / name / time  +  type badge ── */}
+      <div className="flex items-start justify-between gap-2">
+        {/* Left: avatar + name */}
+        <div className="flex items-center gap-2.5 min-w-0">
           <WalletAvatar
             address={post.wallet_address}
             tier={(post.wallet?.tier ?? 'SHRIMP')}
@@ -210,38 +208,55 @@ export function PostCard({
             size="md"
           />
           <div className="flex flex-col min-w-0">
-            <Link href={`/wallet/${post.wallet_address}`} className="font-medium text-sm text-foreground hover:underline truncate">
+            <Link
+              href={`/wallet/${post.wallet_address}`}
+              className="font-medium text-sm text-foreground hover:underline truncate"
+            >
               {displayName(post.wallet_address, post.wallet?.ens_name, post.wallet?.label)}
             </Link>
             <span className="text-xs text-muted-foreground">{timeAgo(post.created_at)}</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Right: type badge (always) + follow (icon-only on mobile) */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {post.is_agent_post && (
+            <span className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-300">
+              Agent
+            </span>
+          )}
           {showFollowButton && !isOwnPost && (isConnected || isWaitingForConnection) && (
             <button
               onClick={handleFollow}
               disabled={isFollowPending || isWaitingForConnection}
               title={isFollowingPost ? 'Unfollow' : 'Follow'}
               className={cn(
-                'flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-all transform hover:scale-105 disabled:opacity-40 disabled:scale-100 font-medium',
+                'flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border transition-all transform hover:scale-105 disabled:opacity-40 disabled:scale-100 font-medium',
                 isFollowingPost
                   ? 'border-red-400/50 text-red-300 bg-red-500/10 hover:border-red-400/80'
                   : 'border-cyan-400/50 text-cyan-300 bg-cyan-500/10 hover:border-cyan-300/80',
               )}
             >
               {isFollowingPost ? <UserMinus className="w-3 h-3" /> : <UserPlus className="w-3 h-3" />}
-              <span>{isFollowingPost ? 'Following' : 'Follow'}</span>
+              {/* Label hidden on mobile, visible sm+ */}
+              <span className="hidden sm:inline">
+                {isFollowingPost ? 'Following' : 'Follow'}
+              </span>
             </button>
           )}
-          <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-200 border border-cyan-500/30">
-            <span className="text-base">{typeMeta.icon}</span>
-            <span>{typeMeta.label}</span>
+
+          {/* Type badge: icon only on mobile, icon + label on sm+ */}
+          <div className="flex items-center gap-1 sm:gap-1.5 text-xs px-2 sm:px-3 py-1.5 rounded-lg font-medium bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-200 border border-cyan-500/30">
+            <span className="text-sm sm:text-base leading-none">{typeMeta.icon}</span>
+            <span className="hidden sm:inline">{typeMeta.label}</span>
           </div>
         </div>
       </div>
 
-      <EventSummary post={post} />
+      {/* ── Event summary ── */}
+      <div className="text-sm leading-relaxed">
+        <EventSummary post={post} />
+      </div>
 
       {likeError && (
         <div className="text-xs text-red-300 bg-red-500/15 rounded-lg px-3 py-2 border border-red-500/40 font-medium">
@@ -249,12 +264,14 @@ export function PostCard({
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-1 border-t border-border/50">
-        <div className="flex items-center gap-4">
+      {/* ── Bottom bar: actions + tx info ── */}
+      <div className="flex items-center justify-between pt-1 border-t border-border/50 gap-2">
+        {/* Actions */}
+        <div className="flex items-center gap-3.5">
           <button
             onClick={handleLike}
             disabled={hasLiked || isWaitingForConnection}
-            title={!isConnected ? 'Connect wallet to like' : hasLiked ? 'Already liked' : isWaitingForConnection ? 'Connecting...' : 'Like'}
+            title={!isConnected ? 'Connect wallet to like' : hasLiked ? 'Already liked' : 'Like'}
             className={cn(
               'flex items-center gap-1.5 text-xs transition-all transform hover:scale-110 font-medium',
               hasLiked ? 'text-red-400 cursor-default' : 'text-muted-foreground hover:text-red-400',
@@ -290,10 +307,7 @@ export function PostCard({
                   Share Signal
                 </div>
                 <button
-                  onClick={() => {
-                    handleShareCopy()
-                    setShowShare(false)
-                  }}
+                  onClick={() => { handleShareCopy(); setShowShare(false) }}
                   className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-accent/60 transition-colors text-left"
                 >
                   {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -310,14 +324,18 @@ export function PostCard({
                   onClick={handleShareTwitter}
                   className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-accent/60 transition-colors text-left"
                 >
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z" /></svg>
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
                   Share on X
                 </button>
                 <button
                   onClick={handleShareTelegram}
                   className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-accent/60 transition-colors text-left"
                 >
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" /></svg>
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+                  </svg>
                   Share on Telegram
                 </button>
               </div>
@@ -325,16 +343,21 @@ export function PostCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">Block {post.block_number}</span>
+        {/* Tx info — block number hidden on mobile */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <span className="hidden sm:inline text-xs text-muted-foreground shrink-0">
+            Block {post.block_number}
+          </span>
           <a
             href={txUrl(post.tx_hash)}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors min-w-0"
           >
-            <ExternalLink className="w-3 h-3" />
-            <span className="font-mono">{post.tx_hash.slice(0, 10)}...</span>
+            <ExternalLink className="w-3 h-3 shrink-0" />
+            {/* Longer on sm+, shorter on mobile */}
+            <span className="font-mono hidden sm:inline">{post.tx_hash.slice(0, 10)}…</span>
+            <span className="font-mono sm:hidden">{post.tx_hash.slice(0, 6)}…</span>
           </a>
         </div>
       </div>
@@ -468,6 +491,18 @@ function EventSummary({ post }: { post: Post }) {
           deployed contract{' '}
           {post.contract_address ? <span className="font-mono text-xs bg-muted px-1 rounded">{shortAddress(post.contract_address)}</span> : null}
         </p>
+      )
+    case 'AGENT_INSIGHT':
+      return (
+        <div className="space-y-1">
+          {post.heading && <p className="text-sm font-semibold text-emerald-300">{post.heading}</p>}
+          {post.content && <p className="text-sm text-foreground">{post.content}</p>}
+          {post.source_post_id && (
+            <p className="text-xs text-muted-foreground">
+              Source event: <span className="font-mono">{shortAddress(post.source_post_id, 6)}</span>
+            </p>
+          )}
+        </div>
       )
     default:
       return (

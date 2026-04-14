@@ -6,6 +6,7 @@ import { publicClientWs, publicClientHttp, publicClientReactivityWs } from './co
 import { processEvent, processNativeTransfer, processContractDeploy } from './lib/eventProcessor.js'
 import { startTrendingFlushInterval } from './lib/trendingEngine.js'
 import { startReputationFlushInterval } from './lib/eventProcessor.js'
+import { startAutonomousAgent } from './lib/autonomousAgent.js'
 import {
   ERC20_TRANSFER_TOPIC,
   ERC20_APPROVAL_TOPIC,
@@ -662,6 +663,7 @@ async function main() {
 
   startTrendingFlushInterval()
   startReputationFlushInterval()
+  await startAutonomousAgent()
 
   const shutdown = async (signal: string) => {
     console.log(`\n[Main] Received ${signal}. Shutting down gracefully...`)

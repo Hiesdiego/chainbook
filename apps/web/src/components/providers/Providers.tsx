@@ -1,3 +1,5 @@
+//apps/web/src/components/providers/Providers.tsx
+
 'use client'
 
 import { PrivyProvider } from '@privy-io/react-auth'
@@ -32,7 +34,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
             walletList: ['metamask', 'coinbase_wallet', 'rainbow', 'wallet_connect'],
           },
           embeddedWallets: {
-            createOnLogin: 'users-without-wallets',
+            // In newer Privy SDK versions, createOnLogin moved under the
+            // chain-specific namespace rather than at the top level.
+            ethereum: {
+              createOnLogin: 'users-without-wallets',
+            },
           },
           defaultChain: somniaTestnet,
           supportedChains: [somniaTestnet],

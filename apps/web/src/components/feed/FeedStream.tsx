@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { AnimatePresence } from 'framer-motion'
-import { useAccount } from 'wagmi'
+import { useAccount, useWatchContractEvent } from 'wagmi'
 import { usePrivy } from '@privy-io/react-auth'
 import { PostCard } from './PostCard'
 import { SuggestedFollows } from './SuggestedFollows'
@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getCommentCounts } from '@/lib/api/comments'
 import { isExcludedContract } from '@/lib/utils'
 import { SOUNDS } from '@/lib/sounds/soundManager'
+import { CONTRACT_ADDRESSES, POST_REGISTRY_ABI } from '@/lib/contracts'
 import type { Post, PostType } from '@chainbook/shared'
 
 const PAGE_SIZE = 30
@@ -19,8 +20,17 @@ interface FeedStreamProps {
   initialPosts: Post[]
 }
 
-type FeedMode = 'for_you' | 'following' | 'spotlight'
+type FeedMode = 'for_you' | 'following' | 'spotlight' | 'agents'
 type SpotlightEventFilter =
+  | 'all'
+  | 'TRANSFER'
+  | 'SWAP'
+  | 'MINT'
+  | 'DAO_VOTE'
+  | 'LIQUIDITY'
+  | 'CONTRACT_DEPLOY'
+  | 'NFT_TRADE'
+type AgentSourceFilter =
   | 'all'
   | 'TRANSFER'
   | 'SWAP'
@@ -36,12 +46,31 @@ function matchesSpotlightEventFilter(type: PostType, filter: SpotlightEventFilte
   return type === filter
 }
 
+function isAgentPost(post: Post): boolean {
+  return post.is_agent_post === true || post.type === 'AGENT_INSIGHT'
+}
+
+function getSourceEventType(post: Post): string | null {
+  const meta = (post.metadata ?? {}) as Record<string, unknown>
+  const sourceType = meta['source_post_type']
+  return typeof sourceType === 'string' ? sourceType : null
+}
+
+function matchesAgentSourceFilter(post: Post, filter: AgentSourceFilter): boolean {
+  if (filter === 'all') return true
+  const sourceType = getSourceEventType(post)
+  if (!sourceType) return false
+  if (filter === 'LIQUIDITY') return sourceType === 'LIQUIDITY_ADD' || sourceType === 'LIQUIDITY_REMOVE'
+  return sourceType === filter
+}
+
 export function FeedStream({ initialPosts }: FeedStreamProps) {
   const [posts, setPosts] = useState<Post[]>(initialPosts)
   const [newCount, setNewCount] = useState(0)
   const [mode, setMode] = useState<FeedMode>('for_you')
   const [spotlightContractFilter, setSpotlightContractFilter] = useState('')
   const [spotlightEventFilter, setSpotlightEventFilter] = useState<SpotlightEventFilter>('all')
+  const [agentSourceFilter, setAgentSourceFilter] = useState<AgentSourceFilter>('all')
   const [followingAddresses, setFollowingAddresses] = useState<string[]>([])
   const [followingLoaded, setFollowingLoaded] = useState(false)
 
@@ -77,11 +106,59 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
     void playSound(SOUNDS.SOCIAL.like)
   }, [playSound])
 
+  const applyLikeDelta = useCallback((postIdHashes: string[], delta: number) => {
+    if (postIdHashes.length === 0 || delta === 0) return
+    const deltaByHash = new Map<string, number>()
+    for (const hash of postIdHashes) {
+      const key = hash.toLowerCase()
+      deltaByHash.set(key, (deltaByHash.get(key) ?? 0) + delta)
+    }
+
+    setPosts((prev) =>
+      prev.map((post) => {
+        const postHash = post.post_id_hash.toLowerCase()
+        const postDelta = deltaByHash.get(postHash)
+        if (!postDelta) return post
+        const nextLikeCount = Math.max(0, (post.like_count ?? 0) + postDelta)
+        if (nextLikeCount === (post.like_count ?? 0)) return post
+        return { ...post, like_count: nextLikeCount }
+      }),
+    )
+  }, [])
+
   const filterContractPosts = useCallback((postsToFilter: Post[]): Post[] => {
     return postsToFilter.filter(
       (post) => !isExcludedContract((post.wallet as any)?.contract_type),
     )
   }, [])
+
+  useWatchContractEvent({
+    address: CONTRACT_ADDRESSES.postRegistry,
+    abi: POST_REGISTRY_ABI,
+    eventName: 'PostLiked',
+    enabled: posts.length > 0,
+    onLogs(logs) {
+      if (logs.length === 0) return
+      const postIdHashes = logs
+        .map((log) => (typeof log.args.postId === 'string' ? log.args.postId : null))
+        .filter((value): value is string => !!value)
+      applyLikeDelta(postIdHashes, 1)
+    },
+  })
+
+  useWatchContractEvent({
+    address: CONTRACT_ADDRESSES.postRegistry,
+    abi: POST_REGISTRY_ABI,
+    eventName: 'PostUnliked',
+    enabled: posts.length > 0,
+    onLogs(logs) {
+      if (logs.length === 0) return
+      const postIdHashes = logs
+        .map((log) => (typeof log.args.postId === 'string' ? log.args.postId : null))
+        .filter((value): value is string => !!value)
+      applyLikeDelta(postIdHashes, -1)
+    },
+  })
 
   const prependPost = useCallback(
     (post: Post) => {
@@ -149,6 +226,7 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
           .from('posts')
           .select('*, wallet:wallets(*)')
           .lt('created_at', cursor)
+          .eq('is_agent_post', false)
           .order('created_at', { ascending: false })
           .limit(PAGE_SIZE)
 
@@ -183,6 +261,7 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
           .from('posts')
           .select('*, wallet:wallets(*)')
           .in('wallet_address', followingAddresses)
+          .eq('is_agent_post', false)
           .lt('created_at', cursor)
           .order('created_at', { ascending: false })
           .limit(PAGE_SIZE)
@@ -199,6 +278,35 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
           })
         } else {
           setHasMore(false)
+        }
+
+      } else if (mode === 'agents') {
+        if (!cursor) { setHasMore(false); return }
+
+        const { data, error } = await supabase
+          .from('posts')
+          .select('*, wallet:wallets(*)')
+          .lt('created_at', cursor)
+          .or('is_agent_post.eq.true,type.eq.AGENT_INSIGHT')
+          .order('created_at', { ascending: false })
+          .limit(PAGE_SIZE)
+
+        if (error || !data) return
+
+        if (data.length < PAGE_SIZE) setHasMore(false)
+        if (data.length > 0) {
+          setCursor(data[data.length - 1]?.created_at ?? null)
+        }
+
+        const filtered = filterContractPosts(data).filter((post) =>
+          matchesAgentSourceFilter(post as Post, agentSourceFilter),
+        )
+
+        if (filtered.length > 0) {
+          setPosts((prev) => {
+            const seen = new Set(prev.map((p) => p.id))
+            return [...prev, ...filtered.filter((p) => !seen.has(p.id))]
+          })
         }
 
       } else if (mode === 'spotlight') {
@@ -227,6 +335,7 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
           .from('posts')
           .select('*, wallet:wallets(*)')
           .in('id', ids)
+          .eq('is_agent_post', false)
           .order('created_at', { ascending: false })
 
         if (normalizedSpotlightContract) {
@@ -261,7 +370,7 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
     }
   }, [
     isLoadingMore, hasMore, mode, cursor, spotlightCursor,
-    followingAddresses, normalizedSpotlightContract, spotlightEventFilter,
+    followingAddresses, normalizedSpotlightContract, spotlightEventFilter, agentSourceFilter,
     supabase, filterContractPosts,
   ])
 
@@ -322,6 +431,10 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
           return
         }
         query = query.in('wallet_address', followingAddresses)
+        query = query.eq('is_agent_post', false)
+
+      } else if (mode === 'agents') {
+        query = query.or('is_agent_post.eq.true,type.eq.AGENT_INSIGHT')
 
       } else if (mode === 'spotlight') {
         const { data: spotlightRows, error: spotlightError } = await supabase
@@ -345,6 +458,7 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
         }
 
         query = query.in('id', ids)
+        query = query.eq('is_agent_post', false)
         if (normalizedSpotlightContract) {
           const isExactAddress = /^0x[a-f0-9]{40}$/.test(normalizedSpotlightContract)
           if (isExactAddress) {
@@ -363,6 +477,7 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
 
       } else {
         // for_you
+        query = query.eq('is_agent_post', false)
         if (followingAddresses.length > 0) {
           const inList = followingAddresses.join(',')
           query = query.or(
@@ -376,7 +491,11 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
       const { data, error } = await query
       if (error || !data || !isMounted) return
 
-      const filteredData = filterContractPosts(data)
+      const filteredData = filterContractPosts(data).filter((post) =>
+        mode === 'agents'
+          ? matchesAgentSourceFilter(post as Post, agentSourceFilter)
+          : true,
+      )
 
       setPosts((prev) => {
         const seen = new Set(prev.map((p) => p.id))
@@ -387,9 +506,12 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
 
       // Only set cursor on the first fetch after a mode switch — polls must not
       // overwrite it, otherwise scrolling back up resets the loadMore position.
-      if (!firstFetchDoneRef.current && filteredData.length > 0) {
+      if (!firstFetchDoneRef.current && (filteredData.length > 0 || (mode === 'agents' && data.length > 0))) {
         firstFetchDoneRef.current = true
-        if (mode !== 'spotlight') {
+        if (mode === 'agents') {
+          setCursor(data[data.length - 1]?.created_at ?? null)
+          setHasMore(data.length >= PAGE_SIZE)
+        } else if (mode !== 'spotlight') {
           setCursor(filteredData[filteredData.length - 1].created_at)
           setHasMore(filteredData.length >= PAGE_SIZE)
         }
@@ -416,16 +538,30 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
             .eq('id', payload.new.id)
             .single()
           if (!data) return
+
+          const newPost = data as Post
+
           if (mode === 'spotlight') {
-            const contractAddress = (data as Post).contract_address?.toLowerCase() ?? ''
+            const contractAddress = newPost.contract_address?.toLowerCase() ?? ''
             if (normalizedSpotlightContract) {
               const isExact = /^0x[a-f0-9]{40}$/.test(normalizedSpotlightContract)
               if (isExact && contractAddress !== normalizedSpotlightContract) return
               if (!isExact && !contractAddress.includes(normalizedSpotlightContract)) return
             }
-            if (!matchesSpotlightEventFilter((data as Post).type, spotlightEventFilter)) return
+            if (!matchesSpotlightEventFilter(newPost.type, spotlightEventFilter)) return
+          } else if (mode === 'following') {
+            if (isAgentPost(newPost)) return
+            if (!followingAddresses.includes(newPost.wallet_address.toLowerCase())) return
+          } else if (mode === 'for_you') {
+            if (isAgentPost(newPost)) return
+            const followsWallet = followingAddresses.includes(newPost.wallet_address.toLowerCase())
+            const include = followsWallet || newPost.is_whale_alert || newPost.is_significant === true
+            if (!include) return
+          } else if (mode === 'agents') {
+            if (!isAgentPost(newPost)) return
+            if (!matchesAgentSourceFilter(newPost, agentSourceFilter)) return
           }
-          prependPost(data as Post)
+          prependPost(newPost)
         },
       )
       .on(
@@ -464,6 +600,7 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
     followingLoaded,
     normalizedSpotlightContract,
     spotlightEventFilter,
+    agentSourceFilter,
     filterContractPosts,
   ])
 
@@ -502,6 +639,12 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
           className={`px-3 py-1 rounded-full border ${mode === 'spotlight' ? 'border-blue-400 text-blue-400' : 'border-border text-muted-foreground'}`}
         >
           Spotlight
+        </button>
+        <button
+          onClick={() => switchMode('agents')}
+          className={`px-3 py-1 rounded-full border ${mode === 'agents' ? 'border-blue-400 text-blue-400' : 'border-border text-muted-foreground'}`}
+        >
+          Agents
         </button>
       </div>
 
@@ -562,6 +705,56 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
               setNewCount(0)
               setCursor(null)
               setSpotlightCursor(null)
+              setHasMore(true)
+              firstFetchDoneRef.current = false
+            }}
+            className="rounded-md border border-border px-3 py-1.5 text-muted-foreground hover:text-foreground"
+          >
+            Reset
+          </button>
+        </div>
+      )}
+
+      {/* Agents filters */}
+      {mode === 'agents' && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {(
+            [
+              ['all', 'All'],
+              ['TRANSFER', 'Transfer'],
+              ['SWAP', 'Swap'],
+              ['MINT', 'Mint'],
+              ['DAO_VOTE', 'DAO'],
+              ['LIQUIDITY', 'Liquidity'],
+              ['CONTRACT_DEPLOY', 'Deploy'],
+              ['NFT_TRADE', 'NFT'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => {
+                setAgentSourceFilter(value)
+                setPosts([])
+                setNewCount(0)
+                setCursor(null)
+                setHasMore(true)
+                firstFetchDoneRef.current = false
+              }}
+              className={`rounded-md border px-3 py-1.5 ${
+                agentSourceFilter === value
+                  ? 'border-blue-400 text-blue-400'
+                  : 'border-border text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            onClick={() => {
+              setAgentSourceFilter('all')
+              setPosts([])
+              setNewCount(0)
+              setCursor(null)
               setHasMore(true)
               firstFetchDoneRef.current = false
             }}
@@ -647,6 +840,8 @@ export function FeedStream({ initialPosts }: FeedStreamProps) {
                   ? 'No recent activity from wallets you follow.'
                   : mode === 'spotlight'
                     ? 'No spotlight events yet.'
+                    : mode === 'agents'
+                      ? 'No agent insights match this filter yet.'
                     : 'Listening for on-chain activity...'}
               </p>
             </>

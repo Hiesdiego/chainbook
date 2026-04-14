@@ -22,6 +22,7 @@ export default async function HomePage() {
   if (minUsd > 0) query = query.gte('amount_usd', minUsd)
   if (minScore > 0) query = query.gte('significance_score', minScore)
   query = query.eq('is_significant', true)
+  query = query.eq('is_agent_post', false)
 
   const { data: posts, error } = await query
 

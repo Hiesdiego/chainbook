@@ -66,14 +66,15 @@ export const POST_TYPE_META: Record<
   PostType,
   { icon: string; label: string; color: string }
 > = {
-  SWAP:              { icon: '🔁', label: 'Swap',             color: 'text-blue-400'   },
-  TRANSFER:          { icon: '💸', label: 'Transfer',         color: 'text-green-400'  },
-  MINT:              { icon: '🎨', label: 'Mint',             color: 'text-purple-400' },
-  DAO_VOTE:          { icon: '🏛',  label: 'DAO Vote',        color: 'text-yellow-400' },
-  LIQUIDITY_ADD:     { icon: '💧', label: 'Add Liquidity',    color: 'text-cyan-400'   },
-  LIQUIDITY_REMOVE:  { icon: '🔓', label: 'Remove Liquidity', color: 'text-orange-400' },
-  CONTRACT_DEPLOY:   { icon: '📜', label: 'Deploy',           color: 'text-pink-400'   },
-  NFT_TRADE:         { icon: '🖼',  label: 'NFT Trade',       color: 'text-indigo-400' },
+  SWAP:              { icon: '🔁', label: 'Swap',             color: 'text-blue-400'    },
+  TRANSFER:          { icon: '💸', label: 'Transfer',         color: 'text-green-400'   },
+  MINT:              { icon: '🎨', label: 'Mint',             color: 'text-purple-400'  },
+  DAO_VOTE:          { icon: '🏛', label: 'DAO Vote',         color: 'text-yellow-400'  },
+  LIQUIDITY_ADD:     { icon: '💧', label: 'Add Liquidity',    color: 'text-cyan-400'    },
+  LIQUIDITY_REMOVE:  { icon: '🩸', label: 'Remove Liquidity', color: 'text-orange-400'  },
+  CONTRACT_DEPLOY:   { icon: '📜', label: 'Deploy',           color: 'text-pink-400'    },
+  NFT_TRADE:         { icon: '🖼', label: 'NFT Trade',        color: 'text-indigo-400'  },
+  AGENT_INSIGHT:     { icon: '🤖', label: 'Agent Insight',    color: 'text-emerald-400' },
 }
 
 // ─── Explorer links ───────────────────────────────────────────────────────────

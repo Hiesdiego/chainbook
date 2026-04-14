@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useWriteContract, useReadContract } from 'wagmi'
@@ -26,17 +26,24 @@ export function WhaleSearchClient() {
   const { writeContractAsync, isPending: isFollowPending } = useWriteContract()
   const [isFollowing, setIsFollowing] = useState(false)
 
-  // Check if the connected wallet is following this profile
-  useReadContract({
+  // wagmi v2 removed the onSuccess callback from useReadContract.
+  // Read the data directly and sync it into local state via useEffect.
+  const { data: isFollowingData } = useReadContract({
     address: CONTRACT_ADDRESSES.followGraph,
     abi: FOLLOW_GRAPH_ABI,
     functionName: 'isFollowing',
-    args: connectedAddress && wallet
-      ? [connectedAddress as `0x${string}`, wallet.address as `0x${string}`]
-      : undefined,
+    args:
+      connectedAddress && wallet
+        ? [connectedAddress as `0x${string}`, wallet.address as `0x${string}`]
+        : undefined,
     query: { enabled: !!connectedAddress && !!wallet },
-    onSuccess: (data) => setIsFollowing(!!data),
   })
+
+  useEffect(() => {
+    if (isFollowingData !== undefined) {
+      setIsFollowing(!!isFollowingData)
+    }
+  }, [isFollowingData])
 
   async function handleSearch() {
     const addr = input.trim().toLowerCase()
@@ -59,7 +66,6 @@ export function WhaleSearchClient() {
   }
 
   async function handleTrack() {
-    // Require connection before proceeding
     if (!requireConnection()) return
     if (!wallet) return
     setIsTracking(true)
@@ -72,7 +78,6 @@ export function WhaleSearchClient() {
   }
 
   async function handleFollow() {
-    // Require connection before proceeding
     if (!requireConnection()) return
     if (!wallet || isFollowPending) return
 
@@ -147,11 +152,13 @@ export function WhaleSearchClient() {
                 <p className="text-xs text-muted-foreground">{wallet.ens_name}</p>
               )}
             </div>
-            <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-              isWhale
-                ? 'bg-whale/20 text-whale border border-whale/30'
-                : 'bg-muted text-muted-foreground'
-            }`}>
+            <span
+              className={`text-xs font-medium px-2 py-1 rounded-full ${
+                isWhale
+                  ? 'bg-whale/20 text-whale border border-whale/30'
+                  : 'bg-muted text-muted-foreground'
+              }`}
+            >
               {isWhale ? '🐳 Whale' : 'Not a whale'}
             </span>
           </div>
@@ -160,15 +167,21 @@ export function WhaleSearchClient() {
           <div className="grid grid-cols-3 gap-3 text-xs">
             <div className="rounded-lg bg-muted/50 p-3">
               <div className="text-muted-foreground font-medium">Volume</div>
-              <div className="text-foreground font-semibold mt-1">{formatUsd(wallet.volume_usd ?? 0)}</div>
+              <div className="text-foreground font-semibold mt-1">
+                {formatUsd(wallet.volume_usd ?? 0)}
+              </div>
             </div>
             <div className="rounded-lg bg-muted/50 p-3">
               <div className="text-muted-foreground font-medium">Balance</div>
-              <div className="text-foreground font-semibold mt-1">{formatUsd(wallet.wallet_balance_usd ?? 0)}</div>
+              <div className="text-foreground font-semibold mt-1">
+                {formatUsd(wallet.wallet_balance_usd ?? 0)}
+              </div>
             </div>
             <div className="rounded-lg bg-muted/50 p-3">
               <div className="text-muted-foreground font-medium">Rep</div>
-              <div className="text-foreground font-semibold mt-1">{formatNumber(wallet.reputation_score ?? 0)}</div>
+              <div className="text-foreground font-semibold mt-1">
+                {formatNumber(wallet.reputation_score ?? 0)}
+              </div>
             </div>
           </div>
 
@@ -176,11 +189,15 @@ export function WhaleSearchClient() {
           <div className="flex gap-4 text-xs">
             <div>
               <span className="text-muted-foreground">Followers</span>
-              <p className="font-semibold text-foreground">{formatNumber(wallet.follower_count ?? 0)}</p>
+              <p className="font-semibold text-foreground">
+                {formatNumber(wallet.follower_count ?? 0)}
+              </p>
             </div>
             <div>
               <span className="text-muted-foreground">Following</span>
-              <p className="font-semibold text-foreground">{formatNumber(wallet.following_count ?? 0)}</p>
+              <p className="font-semibold text-foreground">
+                {formatNumber(wallet.following_count ?? 0)}
+              </p>
             </div>
           </div>
 
@@ -200,7 +217,7 @@ export function WhaleSearchClient() {
                   disabled={isTracking}
                   className={cn(
                     'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50',
-                    'border border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                    'border border-border text-muted-foreground hover:text-foreground hover:bg-accent',
                   )}
                 >
                   <Star className="w-4 h-4" />
@@ -214,7 +231,7 @@ export function WhaleSearchClient() {
                     'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50',
                     isFollowing
                       ? 'border border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30'
-                      : 'bg-blue-500 hover:bg-blue-600 text-white'
+                      : 'bg-blue-500 hover:bg-blue-600 text-white',
                   )}
                 >
                   {isFollowing ? (

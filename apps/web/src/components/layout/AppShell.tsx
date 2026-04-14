@@ -13,15 +13,41 @@ import { useMobileLayout } from '@/lib/context/MobileLayoutContext'
 import { useConnectedAccount } from '@/lib/hooks/useConnectedAccount'
 import { WalletAvatar } from '@/components/wallet/WalletAvatar'
 
+// ─── Isolated wallet button ───────────────────────────────────────────────────
+// Keeping wagmi hooks in a child component prevents them from running during
+// WagmiProvider's Hydrate render phase, which caused the setState-in-render error.
+function WalletButton({ onToggle, isSidebarOpen }: { onToggle: () => void; isSidebarOpen: boolean }) {
+  const { isConnected, address } = useConnectedAccount()
+
+  return (
+    <button
+      onClick={onToggle}
+      className={`rounded-full p-0.5 transition ${isSidebarOpen ? 'ring-2 ring-cyan-400/70' : ''}`}
+      title="Open account menu"
+      aria-label="Open account menu"
+    >
+      {isConnected && address ? (
+        <WalletAvatar address={address} size="sm" showName={false} linkable={false} />
+      ) : (
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card">
+          <UserCircle2 className="h-5 w-5 text-muted-foreground" />
+        </span>
+      )}
+    </button>
+  )
+}
+
+// ─── AppShell ─────────────────────────────────────────────────────────────────
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { isMobile, toggleSidebar, isSidebarOpen } = useMobileLayout()
-  const { isConnected, address } = useConnectedAccount()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
+  // Render a blank shell during SSR / before hydration.
+  // No wagmi hooks are called at this level, so Hydrate can complete safely.
   if (!mounted) return <div className="min-h-screen" />
 
   return (
@@ -48,20 +74,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
               <div className="flex items-center gap-2">
                 <ThemeToggle />
-                <button
-                  onClick={toggleSidebar}
-                  className={`rounded-full p-0.5 transition ${isSidebarOpen ? 'ring-2 ring-cyan-400/70' : ''}`}
-                  title="Open account menu"
-                  aria-label="Open account menu"
-                >
-                  {isConnected && address ? (
-                    <WalletAvatar address={address} size="sm" showName={false} linkable={false} />
-                  ) : (
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card">
-                      <UserCircle2 className="h-5 w-5 text-muted-foreground" />
-                    </span>
-                  )}
-                </button>
+                {/* WalletButton owns the wagmi hooks — safe to mount post-hydration */}
+                <WalletButton onToggle={toggleSidebar} isSidebarOpen={isSidebarOpen} />
               </div>
             </div>
           </header>

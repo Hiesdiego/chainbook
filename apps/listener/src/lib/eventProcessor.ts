@@ -13,6 +13,7 @@ import { env } from '../config/env.js'
 import { publicClientHttp } from '../config/chain.js'
 import { getTokenMetadata } from './tokenMetadata.js'
 import { updateWalletTokenHolding, updateWalletNativeBalanceUsd, upsertMintedToken } from './walletTokens.js'
+import { agentEventBus } from './autonomousAgent.js'
 
 // ─── Reputation queue ─────────────────────────────────────────────────────────
 const reputationQueue = new Map<string, { volumeUsd: number; activityCount: number }>()
@@ -283,6 +284,10 @@ export async function processEvent(
   }
 
   setCachedPostSource(postIdHash, incomingSource)
+
+  if (insertedPost && isSignificant) {
+    agentEventBus.emit('new_post', insertedPost)
+  }
 
   if (options?.source === 'reactivity_spotlight' && insertedPost?.id) {
     const { error: spotlightError } = await supabase

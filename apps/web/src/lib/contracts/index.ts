@@ -1,6 +1,25 @@
+//apps/web/src/lib/contracts/index.ts
 // ABIs — only the functions the frontend needs
 
 export const POST_REGISTRY_ABI = [
+  {
+    name: 'PostLiked',
+    type: 'event',
+    inputs: [
+      { indexed: true, name: 'postId', type: 'bytes32' },
+      { indexed: true, name: 'liker', type: 'address' },
+    ],
+    anonymous: false,
+  },
+  {
+    name: 'PostUnliked',
+    type: 'event',
+    inputs: [
+      { indexed: true, name: 'postId', type: 'bytes32' },
+      { indexed: true, name: 'liker', type: 'address' },
+    ],
+    anonymous: false,
+  },
   {
     name: 'likePost',
     type: 'function',

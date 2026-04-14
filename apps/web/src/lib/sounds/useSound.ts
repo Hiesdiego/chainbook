@@ -42,7 +42,7 @@ export function useChainbookSounds() {
   const playNotification = useCallback(async () => play(SOUNDS.NOTIFICATION.new_notification), [play])
   const playSuccess = useCallback(async () => play(SOUNDS.UI.success), [play])
   const playError = useCallback(async () => play(SOUNDS.UI.error), [play])
-  const playClick = useCallback(async () => play(SOUNDS.UI.click), [play])
+ 
 
   return {
     playLike,
@@ -50,7 +50,7 @@ export function useChainbookSounds() {
     playNotification,
     playSuccess,
     playError,
-    playClick,
+ 
   }
 }
 

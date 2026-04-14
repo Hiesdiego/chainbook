@@ -6,7 +6,7 @@ type LikePayload = {
   walletAddress?: string
 }
 
-function normalize(value: string) {
+function normalizeAddress(value: string) {
   return value.trim().toLowerCase()
 }
 
@@ -21,34 +21,46 @@ export async function POST(req: Request) {
   }
 
   const postId = body.postId.trim()
-  const walletAddress = normalize(body.walletAddress)
+  const walletAddress = normalizeAddress(body.walletAddress)
   if (!postId || !walletAddress) {
     return NextResponse.json({ error: 'Invalid postId or walletAddress.' }, { status: 400 })
   }
 
   const supabase = createAdminClient()
-  const { data: existingPost, error: postError } = await supabase
-    .from('posts')
-    .select('id')
-    .eq('id', postId)
-    .single()
-  if (postError || !existingPost) {
-    return NextResponse.json({ error: 'Post not found.' }, { status: 404 })
+
+  const { error: walletError } = await supabase
+    .from('wallets')
+    .upsert({ address: walletAddress }, { onConflict: 'address' })
+  if (walletError) {
+    return NextResponse.json({ error: walletError.message }, { status: 500 })
   }
 
-  const { error } = await supabase.rpc('increment_post_likes', { p_post_id: postId })
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-
-  const { data: updated, error: readError } = await supabase
+  const { data: currentPost, error: currentPostError } = await supabase
     .from('posts')
     .select('like_count')
     .eq('id', postId)
     .single()
-  if (readError || !updated) {
-    return NextResponse.json({ error: readError?.message ?? 'Failed to read like count.' }, { status: 500 })
+  if (currentPostError) {
+    return NextResponse.json({ error: currentPostError.message }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, likeCount: updated.like_count ?? 0 })
+  const nextLikeCount = Number(currentPost?.like_count ?? 0) + 1
+  const { error: updateError } = await supabase
+    .from('posts')
+    .update({ like_count: nextLikeCount })
+    .eq('id', postId)
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 })
+  }
+
+  const { data: post, error: postError } = await supabase
+    .from('posts')
+    .select('like_count')
+    .eq('id', postId)
+    .single()
+  if (postError) {
+    return NextResponse.json({ error: postError.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ ok: true, likeCount: Number(post?.like_count ?? 0) })
 }
